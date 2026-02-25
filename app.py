@@ -24,7 +24,7 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 3. 分析ロジック (Gemini 2.5 Flash) ---
+# --- 3. 分析エンジン (Gemini 2.5 Flash) ---
 def get_analysis(text, scores):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
@@ -32,8 +32,7 @@ def get_analysis(text, scores):
         client = genai.Client(api_key=api_key)
         model_id = "gemini-2.5-flash"
         
-        # 厳格な日本語出力指示
-        prompt = f"心理分析を行ってください。現在のスコア: {scores}, 発言: '{text}'。必ず次のJSON形式のみで返してください: {{\"delta\": {{\"CP\": 0, \"NP\": 0, \"A\": 0, \"FC\": 0, \"AC\": 0}}, \"reply\": \"ユーザーへの返答\"}}"
+        prompt = f"心理分析。現在のスコア: {scores}, 発言: '{text}'。次の形式のJSONのみ返せ: {{\"delta\": {{\"CP\": 0, \"NP\": 0, \"A\": 0, \"FC\": 0, \"AC\": 0}}, \"reply\": \"返答\"}}"
         
         response = client.models.generate_content(
             model=model_id,
@@ -41,10 +40,8 @@ def get_analysis(text, scores):
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         
-        res_data = response.text
-        if isinstance(res_data, str):
-            res_data = json.loads(res_data)
-        return res_data
+        res_text = response.text
+        return json.loads(res_text)
     except Exception:
         return None
 
@@ -75,7 +72,6 @@ with 右カラム:
     )
     st.plotly_chart(fig, width='stretch')
     st.progress(st.session_state.count / 10)
-    st.caption(f"診断進捗: {st.session_state.count * 10}%")
 
 with 左カラム:
     for メッセージ in st.session_state.chat:
@@ -87,23 +83,28 @@ with 左カラム:
             st.session_state.chat.append({"role": "user", "content": 入力文字})
             結果 = get_analysis(入力文字, st.session_state.scores)
             
-            解析成功 = False
-            返答メッセージ = "分析中です..."
+            返答メッセージ = "お話しいただきありがとうございます。"
             
-            if isinstance(結果, dict) and "delta" in 結果:
-                数値データ = 結果.get("delta", {})
+            # --- ここで徹底的に型チェックを行い、AttributeErrorを回避 ---
+            if isinstance(結果, dict):
+                # deltaの取得
+                数値データ = 結果.get("delta")
+                # 数値データが辞書形式の時のみスコア更新
                 if isinstance(数値データ, dict):
                     for key in st.session_state.scores:
+                        # get()が使えることを確認してから値を抽出
                         変化分 = 数値データ.get(key, 0)
                         try:
                             st.session_state.scores[key] = max(-10, min(10, st.session_state.scores[key] + float(変化分)))
-                        except (ValueError, TypeError):
+                        except:
                             pass
-                    返答メッセージ = 結果.get("reply", "お話しいただきありがとうございます。")
-                    解析成功 = True
-
-            if not 解析成功:
-                返答メッセージ = "なるほど、興味深いお話ですね。もう少し詳しく教えていただけますか？"
+                
+                # 返答の取得
+                if "reply" in 結果:
+                    返答メッセージ = 結果["reply"]
+            else:
+                # 結果が辞書でない（単なる数字や文字列だった）場合
+                返答メッセージ = "なるほど。もう少し詳しく聞かせていただけますか？"
 
             st.session_state.chat.append({"role": "assistant", "content": 返答メッセージ})
             st.session_state.count += 1
