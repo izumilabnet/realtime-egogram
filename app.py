@@ -25,55 +25,48 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 3. 分析エンジン (Gemini 2.5 Flash 固定) ---
-def get_analysis(text, scores, is_final=False):
+# --- 3. 分析エンジン (Gemini 2.5 Flash) ---
+def get_ai_response(text, scores, is_final=False):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
     try:
         client = genai.Client(api_key=api_key)
-        # あなたの指定に基づき、モデルは2.5 Flashを使用します
         model_id = "gemini-2.5-flash"
         
         if is_final:
-            prompt_content = f"最終スコア {scores} に基づき、性格タイプ名、特徴、適職、アドバイスを日本語のJSONで返してください。"
+            prompt = f"最終スコア {scores} に基づき、エゴグラムのグラフパターンを解釈してください。性格名、全体傾向、適職、対人アドバイスを日本語のJSONで返してください。"
         else:
-            try:
-                with open("prompt.txt", "r", encoding="utf-8") as f:
-                    base_rules = f.read()
-            except:
-                base_rules = "エゴグラムの5項目で分析してください。"
-
-            prompt_content = f"""
-            {base_rules}
-            現在のスコア: {scores}
-            発言: '{text}'
+            # 概念を排除し、特定の言動に対するスコアリングを指示
+            prompt = f"""
+            以下のルールに従い、ユーザーの発言から各項目の加点・減点（-3から+3）を判定してください。
             
-            返答(reply)には改行を使わず、次のJSON形式のみで返せ。
-            {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
+            【加点・減点の判定基準】
+            CP（批判的な親）: 規律、批判、理想の追求、他者への指導的態度があればプラス。
+            NP（養育的な親）: 許容、同情、世話焼き、優しさがあればプラス。
+            A（大人）: 客観的事実の提示、論理的分析、冷静な判断があればプラス。
+            FC（自由な子供）: 感情の爆発、好奇心、わがまま、ユーモアがあればプラス。
+            AC（順応した子供）: 他者への同調、我慢、遠慮、周囲の期待への適合、自己抑制があれば「必ずプラス」に加点してください。
+            
+            現在の累積スコア: {scores}
+            今回の発言: '{text}'
+            
+            出力は以下のJSON形式のみとします。余計な解説は一切不要です。
+            {{"delta": {{"CP\": 0, \"NP\": 0, \"A\": 0, \"FC\": 0, \"AC\": 0}}, \"reply\": \"ユーザーへの短い返答\"}}
             """
         
         response = client.models.generate_content(
             model=model_id,
-            contents=prompt_content,
+            contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
-        return json.loads(response.text.strip())
-    except Exception:
+        return json.loads(response.text)
+    except:
         return None
 
 # --- 4. 画面レイアウト ---
-with st.sidebar:
-    st.title("設定")
-    st.selectbox("性別", ["男性", "女性", "その他"], key="g")
-    st.selectbox("年齢層", ["10代", "20代", "30代", "40代", "50代以上"], key="a")
-    st.divider()
-    if st.button("データをリセット"):
-        st.session_state.clear()
-        st.rerun()
+左, 右 = st.columns([2, 1])
 
-左カラム, 右カラム = st.columns([2, 1])
-
-with 右カラム:
+with 右:
     st.subheader("📊 EQイコライザー")
     df = pd.DataFrame(list(st.session_state.scores.items()), columns=['項目', '値'])
     fig = go.Figure(go.Bar(
@@ -82,51 +75,49 @@ with 右カラム:
         marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
     ))
     fig.update_layout(
-        yaxis=dict(range=[-10.1, 10.1], zeroline=True), 
-        height=350, 
-        margin=dict(l=10, r=10, t=10, b=10)
+        yaxis=dict(range=[-10, 10], zeroline=True, gridcolor='LightGray'),
+        xaxis=dict(categoryorder='array', categoryarray=["CP", "NP", "A", "FC", "AC"]),
+        height=400, margin=dict(l=10, r=10, t=30, b=10),
+        plot_bgcolor='white'
     )
-    # 最新のStreamlit仕様に合わせて修正
     st.plotly_chart(fig, width='stretch')
     st.progress(st.session_state.count / 10)
     
     if st.session_state.diagnosis:
-        st.success("### 診断結果")
-        st.write(st.session_state.diagnosis.get("summary", "分析完了"))
+        d = st.session_state.diagnosis
+        st.success(f"### 診断結果")
+        st.write(d.get('summary', ''))
 
-with 左カラム:
-    for メッセージ in st.session_state.chat:
-        with st.chat_message(メッセージ["role"]):
-            st.write(メッセージ["content"])
+with 左:
+    for m in st.session_state.chat:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
 
     if st.session_state.count < 10:
-        if 入力文字 := st.chat_input("今の気持ちを教えてください"):
-            st.session_state.chat.append({"role": "user", "content": 入力文字})
+        if inp := st.chat_input("今の気持ちを教えてください"):
+            st.session_state.chat.append({"role": "user", "content": inp})
+            res = get_ai_response(inp, st.session_state.scores)
             
-            with st.spinner("AI分析中..."):
-                結果 = get_analysis(入力文字, st.session_state.scores)
-            
-            # 初期値（AIが失敗した場合の返答）
-            返答メッセージ = "そのお気持ち、もう少し詳しく伺えますか？"
-            
-            if isinstance(結果, dict):
-                delta = 結果.get("delta", {})
-                if isinstance(delta, dict):
-                    for key in st.session_state.scores:
-                        change = delta.get(key, 0)
+            if isinstance(res, dict):
+                deltas = res.get("delta", {})
+                if isinstance(deltas, dict):
+                    for k in st.session_state.scores:
+                        val = deltas.get(k, 0)
                         try:
-                            # 確実に数値として加算し、グラフを動かす
-                            st.session_state.scores[key] = float(max(-10.0, min(10.0, float(st.session_state.scores[key]) + float(change))))
+                            # 累積計算（-10から10の範囲内）
+                            st.session_state.scores[k] = max(-10, min(10, st.session_state.scores[k] + float(val)))
                         except: pass
                 
-                if "reply" in 結果:
-                    返答メッセージ = 結果["reply"]
-
-            st.session_state.chat.append({"role": "assistant", "content": 返答メッセージ})
-            st.session_state.count += 1
-            
-            if st.session_state.count == 10:
-                with st.spinner("最終診断中..."):
-                    st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
+                st.session_state.chat.append({"role": "assistant", "content": res.get("reply", "...")})
+                st.session_state.count += 1
                 
-            st.rerun()
+                if st.session_state.count == 10:
+                    st.session_state.diagnosis = get_ai_response("", st.session_state.scores, True)
+                
+                st.rerun()
+
+with st.sidebar:
+    st.title("REALTIME-EGOGRAM")
+    if st.button("診断をリセット"):
+        st.session_state.clear()
+        st.rerun()
