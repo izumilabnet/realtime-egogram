@@ -34,18 +34,17 @@ def get_analysis(text, scores, is_final=False):
         model_id = "gemini-2.5-flash"
         
         if is_final:
-            prompt = f"エゴグラム診断の最終結果。スコア: {scores}。性格タイプ名、全体的な特徴、適職、対人アドバイスを日本語のJSON形式で返してください。"
+            prompt_content = f"最終スコア {scores} に基づき、性格タイプ名、特徴、適職、アドバイスを日本語のJSONで返してください。"
         else:
-            prompt = f"""
-            ユーザーの発言を以下の行動チェックリストに照らし合わせ、各項目の数値を -3 から +3 の範囲で変動させてください。
-            抽象的な「エネルギー量」ではなく、以下の表現の出現をポイント化してください。
+            # prompt.txtから判定基準を読み込む
+            try:
+                with open("prompt.txt", "r", encoding="utf-8") as f:
+                    base_rules = f.read()
+            except:
+                base_rules = "行動チェックリストに基づいてスコアを変動させてください。"
 
-            【判定基準】
-            CP: 批判、義務感、断定（～すべき、～が当然） → 加点
-            NP: 肯定、優しさ、世話焼き（～してあげる、大丈夫） → 加点
-            A: 客観的、論理的、質問（～という事実、なぜなら） → 加点
-            FC: 感情開放、楽しさ、わがまま（～したい！、すごい） → 加点
-            AC: 同調、遠慮、謝罪、自己抑制（～に従います、すみません） → 必ず「加点」
+            prompt_content = f"""
+            {base_rules}
 
             現在のスコア: {scores}
             発言: '{text}'
@@ -56,7 +55,7 @@ def get_analysis(text, scores, is_final=False):
         
         response = client.models.generate_content(
             model=model_id,
-            contents=prompt,
+            contents=prompt_content,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         return json.loads(response.text)
