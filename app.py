@@ -23,14 +23,18 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# APIキーを環境変数から取得
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    st.error("APIキーが設定されていません。")
+    st.error("APIキーが設定されていません。RenderのEnvironment Variablesを確認してください。")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
 
+# 常に最新の Flash モデルを使用（ユーザー指定に合わせ2.0系を使用）
+model = genai.GenerativeModel('gemini-2.0-flash')
+
+# セッション状態の初期化
 if 'ego_scores' not in st.session_state:
     st.session_state.ego_scores = {"CP": 10.0, "NP": 10.0, "A": 10.0, "FC": 10.0, "AC": 10.0}
 if 'chat_history' not in st.session_state:
@@ -60,15 +64,14 @@ def analyze_input_gemini(user_text, current_scores):
         raise ValueError("JSON解析失敗")
 
 # --- 3. UIレイアウト ---
-# 画面を2分割。右側を固定し、左側をチャットにする。
 col_chat, col_graph = st.columns([1.2, 1])
 
 with col_graph:
-    # このコンテナはCSSのsticky設定により、スクロールしても画面内に留まります
     st.markdown('<div class="fixed-header">', unsafe_allow_html=True)
     st.subheader("📊 あなたの心の形（エゴグラム）")
     
     df = pd.DataFrame(list(st.session_state.ego_scores.items()), columns=['指標', 'スコア'])
+    # 累積度に応じて色を濃くする演出
     opacity = min(0.3 + (st.session_state.message_count * 0.1), 1.0)
     
     fig = go.Figure(go.Bar(
@@ -90,27 +93,41 @@ with col_graph:
 with col_chat:
     st.subheader("💬 Geminiとの対話")
     
-    # チャット表示専用のコンテナ
     chat_container = st.container()
     with chat_container:
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
-    # 入力エリア（画面下に固定されるStreamlit標準のchat_input）
     if prompt := st.chat_input("今の気持ちを話してください"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         
         with st.spinner("Geminiが分析中..."):
             try:
                 result = analyze_input_gemini(prompt, st.session_state.ego_scores)
-                # スコア累積
+                
+                # スコア更新と変動通知の生成
+                notices = []
                 for key in st.session_state.ego_scores:
-                    new_val = st.session_state.ego_scores[key] + result["delta"][key]
+                    delta = result["delta"].get(key, 0)
+                    
+                    # 0.5以上の変動があった場合に通知を準備
+                    if delta >= 0.5:
+                        notices.append(f"⬆️ {key} が上昇しました")
+                    elif delta <= -0.5:
+                        notices.append(f"⬇️ {key} が低下しました")
+                    
+                    # スコアの累積更新
+                    new_val = st.session_state.ego_scores[key] + delta
                     st.session_state.ego_scores[key] = max(0, min(20, new_val))
                 
                 st.session_state.message_count += 1
                 st.session_state.chat_history.append({"role": "assistant", "content": result["reply"]})
+                
+                # 変動通知（トースト）を画面に表示
+                for n in notices:
+                    st.toast(n, icon="💡")
+                
                 st.rerun()
             except Exception as e:
                 st.error(f"エラー: {e}")
