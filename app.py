@@ -6,10 +6,9 @@ from google.genai import types
 import json
 import os
 
-# --- 1. ページ設定（最新仕様） ---
+# --- 1. ページ設定 ---
 st.set_page_config(page_title="REALTIME-EGOGRAM", layout="wide")
 
-# セッション状態の初期化
 if 'auth' not in st.session_state: st.session_state.auth = False
 if 'scores' not in st.session_state: st.session_state.scores = {"CP":0.0, "NP":0.0, "A":0.0, "FC":0.0, "AC":0.0}
 if 'chat' not in st.session_state: st.session_state.chat = []
@@ -24,62 +23,61 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 3. AI分析エンジン ---
+# --- 3. 分析エンジン (Gemini 2.5 Flash 使用) ---
 def get_analysis(text, scores):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
     try:
         client = genai.Client(api_key=api_key)
-        # 学会発表を意識した精度の高いプロンプト
+        # モデル名をリストにある通り 'gemini-2.5-flash' に設定
+        model_id = "gemini-2.5-flash"
+        
         prompt = f"Analyze psychological state. Scores: {scores}, Input: '{text}'. Return JSON with delta, reason, and reply."
+        
         response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt,
+            model=model_id,
+            contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         return json.loads(response.text)
-    except:
+    except Exception as e:
+        # 通信エラー時はNoneを返して画面停止を防ぐ
         return None
 
-# --- 4. メイン画面レイアウト ---
+# --- 4. UI ---
 with st.sidebar:
     st.title("SETTINGS")
-    st.selectbox("Gender", ["Male", "Female", "Other"], key="gender")
-    st.selectbox("Age", ["10s", "20s", "30s", "40s", "50s+"], key="age")
-    st.divider()
+    st.selectbox("Gender", ["Male", "Female", "Other"], key="g")
+    st.selectbox("Age", ["10s", "20s", "30s", "40s", "50s+"], key="a")
     if st.button("RESET"):
         st.session_state.clear()
         st.rerun()
 
-col_chat, col_viz = st.columns([2, 1])
+left, right = st.columns([2, 1])
 
-with col_viz:
+with right:
     st.subheader("📊 EQ Equalizer")
-    df = pd.DataFrame(list(st.session_state.scores.items()), columns=['ID', 'Val'])
-    fig = go.Figure(go.Bar(
-        x=df['ID'], y=df['Val'],
-        marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['Val']]
-    ))
+    df = pd.DataFrame(list(st.session_state.scores.items()), columns=['Key', 'Val'])
+    fig = go.Figure(go.Bar(x=df['Key'], y=df['Val'], marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['Val']]))
     fig.update_layout(yaxis=dict(range=[-10, 10], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
     
-    # 💡 重要：ログの警告に従い、width='stretch' を適用
+    # 💡 ログの警告に対応した最新の描画指定
     st.plotly_chart(fig, width='stretch')
-    
     st.progress(st.session_state.count / 10)
-    st.caption(f"Progress: {st.session_state.count * 10}%")
 
-with col_chat:
+with left:
     for m in st.session_state.chat:
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
     if st.session_state.count < 10:
-        if user_input := st.chat_input("How are you feeling?"):
-            st.session_state.chat.append({"role": "user", "content": user_input})
-            res = get_analysis(user_input, st.session_state.scores)
+        if inp := st.chat_input("How are you feeling?"):
+            st.session_state.chat.append({"role": "user", "content": inp})
+            res = get_analysis(inp, st.session_state.scores)
             if res:
-                # スコア更新
                 for k in st.session_state.scores:
-                    st.session_state.scores[k] = max(-10, min(10, st.session_state.scores[k] + res.get("delta", {}).get(k, 0)))
+                    delta = res.get("delta", {}).get(k, 0)
+                    st.session_state.scores[k] = max(-10, min(10, st.session_state.scores[k] + delta))
                 st.session_state.chat.append({"role": "assistant", "content": res.get("reply", "")})
                 st.session_state.count += 1
                 st.rerun()
