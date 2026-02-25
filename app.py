@@ -45,11 +45,12 @@ def get_analysis(text, scores, is_final=False):
             prompt_content = f"""
             {base_rules}
 
-            現在のスコア: {scores}
-            発言: '{text}'
+            現在の累積スコア: {scores}
+            これまでの文脈を考慮し、次の発言の「裏にある心理」を鋭く分析してください。
+            ユーザーの発言: '{text}'
 
-            次のJSON形式のみで返せ:
-            {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答"}}
+            必ず次のJSON形式のみで返せ:
+            {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "臨床心理士としての返答と問いかけ"}}
             """
         
         response = client.models.generate_content(
@@ -106,7 +107,7 @@ with 左カラム:
             with st.spinner("AIが分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
-            返答メッセージ = "お話しいただきありがとうございます。その時、どのように感じましたか？"
+            返答メッセージ = "今のあなたのお言葉、もう少し深く受け止めたいと感じました。もう少し詳しくお話しいただけますか？"
             
             if isinstance(結果, dict):
                 数値データ = 結果.get("delta")
