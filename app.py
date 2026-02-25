@@ -33,7 +33,7 @@ def get_analysis(text, scores):
         # 学会発表を意識した精度の高いプロンプト
         prompt = f"Analyze psychological state. Scores: {scores}, Input: '{text}'. Return JSON with delta, reason, and reply."
         response = client.models.generate_content(
-            model="gemini-2.0-flash", contents=prompt,
+            model="gemini-2.5-flash", contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
         return json.loads(response.text)
