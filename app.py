@@ -5,11 +5,12 @@ import google.generativeai as genai
 import json
 import re
 import os
+import time  # 追加
+from google.api_core import exceptions  # 追加
 
 # --- 1. 初期設定 ---
 st.set_page_config(page_title="Gemini Egogram AI", layout="wide")
 
-# CSSで左側（チャット）をスクロール、右側（グラフ）を固定する設定
 st.markdown("""
     <style>
     [data-testid="stVerticalBlock"] > div:has(div.fixed-header) {
@@ -23,18 +24,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# APIキーを環境変数から取得
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    st.error("APIキーが設定されていません。RenderのEnvironment Variablesを確認してください。")
+    st.error("APIキーが設定されていません。")
     st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
-
-# 常に最新の Flash モデルを使用（ユーザー指定に合わせ2.0系を使用）
+# 現在利用可能な安定モデルを指定
 model = genai.GenerativeModel('gemini-2.0-flash')
 
-# セッション状態の初期化
 if 'ego_scores' not in st.session_state:
     st.session_state.ego_scores = {"CP": 10.0, "NP": 10.0, "A": 10.0, "FC": 10.0, "AC": 10.0}
 if 'chat_history' not in st.session_state:
@@ -42,7 +40,7 @@ if 'chat_history' not in st.session_state:
 if 'message_count' not in st.session_state:
     st.session_state.message_count = 0
 
-# --- 2. AI分析ロジック ---
+# --- 2. AI分析ロジック (リトライ機能付き) ---
 def analyze_input_gemini(user_text, current_scores):
     prompt = f"""
     あなたは熟練の心理カウンセラーです。エゴグラム理論（CP, NP, A, FC, AC）に基づき分析します。
@@ -56,12 +54,30 @@ def analyze_input_gemini(user_text, current_scores):
     }}
     ユーザーの発言: "{user_text}"
     """
-    response = model.generate_content(prompt)
-    json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-    if json_match:
-        return json.loads(json_match.group())
-    else:
-        raise ValueError("JSON解析失敗")
+    
+    # 429エラー対策：最大3回までリトライ
+    for attempt in range(3):
+        try:
+            response = model.generate_content(prompt)
+            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+            else:
+                raise ValueError("JSON解析失敗")
+        
+        except exceptions.ResourceExhausted:
+            if attempt < 2:
+                # 15秒待機してからリトライ
+                wait_time = 16
+                st.warning(f"現在混雑しています。{wait_time}秒後に自動で再試行します... (試行 {attempt + 1}/3)")
+                time.sleep(wait_time)
+                continue
+            else:
+                st.error("Geminiの無料枠が一時的に制限されています。数分待ってから再度お試しください。")
+                return None
+        except Exception as e:
+            st.error(f"予期せぬエラーが発生しました: {e}")
+            return None
 
 # --- 3. UIレイアウト ---
 col_chat, col_graph = st.columns([1.2, 1])
@@ -71,7 +87,6 @@ with col_graph:
     st.subheader("📊 あなたの心の形（エゴグラム）")
     
     df = pd.DataFrame(list(st.session_state.ego_scores.items()), columns=['指標', 'スコア'])
-    # 累積度に応じて色を濃くする演出
     opacity = min(0.3 + (st.session_state.message_count * 0.1), 1.0)
     
     fig = go.Figure(go.Bar(
@@ -79,11 +94,7 @@ with col_graph:
         marker_color='rgba(255, 99, 132, ' + str(opacity) + ')',
         marker_line_color='rgb(150, 0, 0)', marker_line_width=1.5
     ))
-    fig.update_layout(
-        yaxis=dict(range=[0, 20]),
-        height=400,
-        margin=dict(l=20, r=20, t=20, b=20)
-    )
+    fig.update_layout(yaxis=dict(range=[0, 20]), height=400, margin=dict(l=20, r=20, t=20, b=20))
     st.plotly_chart(fig, use_container_width=True)
     
     st.progress(min(st.session_state.message_count * 10, 100))
@@ -92,7 +103,6 @@ with col_graph:
 
 with col_chat:
     st.subheader("💬 Geminiとの対話")
-    
     chat_container = st.container()
     with chat_container:
         for msg in st.session_state.chat_history:
@@ -101,33 +111,25 @@ with col_chat:
 
     if prompt := st.chat_input("今の気持ちを話してください"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
-        
+        with st.chat_message("user"):
+            st.write(prompt)
+
         with st.spinner("Geminiが分析中..."):
-            try:
-                result = analyze_input_gemini(prompt, st.session_state.ego_scores)
-                
-                # スコア更新と変動通知の生成
+            result = analyze_input_gemini(prompt, st.session_state.ego_scores)
+            
+            if result:
                 notices = []
                 for key in st.session_state.ego_scores:
                     delta = result["delta"].get(key, 0)
+                    if delta >= 0.5: notices.append(f"⬆️ {key} が上昇")
+                    elif delta <= -0.5: notices.append(f"⬇️ {key} が低下")
                     
-                    # 0.5以上の変動があった場合に通知を準備
-                    if delta >= 0.5:
-                        notices.append(f"⬆️ {key} が上昇しました")
-                    elif delta <= -0.5:
-                        notices.append(f"⬇️ {key} が低下しました")
-                    
-                    # スコアの累積更新
                     new_val = st.session_state.ego_scores[key] + delta
                     st.session_state.ego_scores[key] = max(0, min(20, new_val))
                 
                 st.session_state.message_count += 1
                 st.session_state.chat_history.append({"role": "assistant", "content": result["reply"]})
                 
-                # 変動通知（トースト）を画面に表示
                 for n in notices:
                     st.toast(n, icon="💡")
-                
                 st.rerun()
-            except Exception as e:
-                st.error(f"エラー: {e}")
