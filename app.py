@@ -59,12 +59,21 @@ def get_analysis(text, scores, is_final=False):
         )
         
         raw_text = response.text.strip()
+        
+        # デバッグ用ログ：AIの生回答をコンソールに出力
+        print(f"--- AI Response (Count: {st.session_state.count}) ---")
+        print(raw_text)
+        print("---------------------------------------------")
+
         # JSON抽出の強化
         json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group())
+            parsed_json = json.loads(json_match.group())
+            return parsed_json
+            
         return None
     except Exception as e:
+        print(f"Error during analysis: {e}")
         return None
 
 # --- 4. 画面レイアウト ---
