@@ -84,7 +84,6 @@ with 右カラム:
     
     if st.session_state.diagnosis:
         st.success("### 診断結果")
-        # JSONの構造がどうであれ、中身を表示しやすくする
         diag = st.session_state.diagnosis
         if isinstance(diag, dict):
             for k, v in diag.items():
