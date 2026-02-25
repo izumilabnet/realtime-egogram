@@ -36,12 +36,11 @@ def get_analysis(text, scores, is_final=False):
         if is_final:
             prompt_content = f"最終スコア {scores} に基づき、性格タイプ名、特徴、適職、アドバイスを日本語のJSONで返してください。"
         else:
-            # prompt.txtから判定基準を読み込む
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "行動チェックリストに基づいてスコアを変動させてください。"
+                base_rules = "行動チェックリストに基づいてスコアを変動させてください。ACの加点を忘れないでください。"
 
             prompt_content = f"""
             {base_rules}
@@ -87,13 +86,12 @@ with 右カラム:
         height=350, 
         margin=dict(l=10, r=10, t=10, b=10)
     )
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
     st.progress(st.session_state.count / 10)
     
-    # 最終診断結果の表示
     if st.session_state.diagnosis:
         st.success("### 診断結果")
-        st.write(st.session_state.diagnosis.get("summary", ""))
+        st.write(st.session_state.diagnosis.get("summary", "分析が完了しました。"))
 
 with 左カラム:
     for メッセージ in st.session_state.chat:
@@ -103,9 +101,12 @@ with 左カラム:
     if st.session_state.count < 10:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
             st.session_state.chat.append({"role": "user", "content": 入力文字})
-            結果 = get_analysis(入力文字, st.session_state.scores)
             
-            返答メッセージ = "お話しいただきありがとうございます。"
+            # AI分析中にスピナーを表示（フリーズ防止）
+            with st.spinner("AIが分析中..."):
+                結果 = get_analysis(入力文字, st.session_state.scores)
+            
+            返答メッセージ = "お話しいただきありがとうございます。その時、どのように感じましたか？"
             
             if isinstance(結果, dict):
                 数値データ = 結果.get("delta")
@@ -119,14 +120,12 @@ with 左カラム:
                 
                 if "reply" in 結果:
                     返答メッセージ = 結果["reply"]
-            else:
-                返答メッセージ = "なるほど。もう少し詳しく聞かせていただけますか？"
-
+            
             st.session_state.chat.append({"role": "assistant", "content": 返答メッセージ})
             st.session_state.count += 1
             
-            # 10回目に到達したら診断結果を取得
             if st.session_state.count == 10:
-                st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
+                with st.spinner("最終診断を作成中..."):
+                    st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
                 
             st.rerun()
