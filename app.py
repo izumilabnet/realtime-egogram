@@ -35,7 +35,7 @@ def get_analysis(text, scores, is_final=False):
         model_id = "gemini-2.5-flash"
         
         if is_final:
-            prompt_content = f"最終的なエゴグラムスコア {scores} から、この人物の性格類型、特徴、適職、アドバイスを詳細な日本語の文章（JSON形式）で返してください。"
+            prompt_content = f"最終スコア {scores} から、性格類型、特徴、適職、アドバイスを詳細な日本語のJSONで返してください。"
         else:
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
@@ -48,7 +48,7 @@ def get_analysis(text, scores, is_final=False):
             現在の累積スコア: {scores}
             今回の発言: '{text}'
             
-            必ず次のJSON形式のみで返せ。解説は不要。
+            必ず次のJSON形式のみで返せ。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -59,21 +59,17 @@ def get_analysis(text, scores, is_final=False):
         )
         
         raw_text = response.text.strip()
-        
-        # デバッグ用ログ：AIの生回答をコンソールに出力
-        print(f"--- AI Response (Count: {st.session_state.count}) ---")
-        print(raw_text)
-        print("---------------------------------------------")
+        print(f"--- Raw Response ---\n{raw_text}\n--------------------")
 
-        # JSON抽出の強化
+        # JSON抽出の試行
         json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if json_match:
-            parsed_json = json.loads(json_match.group())
-            return parsed_json
-            
-        return None
+            return json.loads(json_match.group())
+        
+        # 解析不能な場合はテキストだけでも救う
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text[:200]}
     except Exception as e:
-        print(f"Error during analysis: {e}")
+        print(f"Error: {e}")
         return None
 
 # --- 4. 画面レイアウト ---
@@ -117,9 +113,9 @@ with 左カラム:
                 for key in st.session_state.scores:
                     val = delta.get(key, 0)
                     st.session_state.scores[key] = float(max(-10.0, min(10.0, st.session_state.scores[key] + float(val))))
-                返答 = 結果.get("reply", "お話しいただきありがとうございます。続けてお聴かせください。")
+                返答 = 結果.get("reply", "お話しいただきありがとうございます。")
             else:
-                返答 = "申し訳ありません、少し考えを整理させてください。もう一度詳しく伺えますか？"
+                返答 = "少し接続が不安定なようです。もう一度お話しいただけますか？"
 
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
