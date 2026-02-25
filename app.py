@@ -58,7 +58,9 @@ def get_analysis(text, scores, is_final=False):
             contents=prompt_content,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )
-        return json.loads(response.text)
+        # JSON解析の失敗を防ぐため、不要な空白を除去
+        raw_text = response.text.strip()
+        return json.loads(raw_text)
     except Exception:
         return None
 
@@ -107,7 +109,8 @@ with 左カラム:
             with st.spinner("AIが分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
-            返答メッセージ = "今のあなたのお言葉、もう少し深く受け止めたいと感じました。もう少し詳しくお話しいただけますか？"
+            # デフォルトの返答をより自然なものに変更
+            返答メッセージ = "今のあなたの言葉の背景にある思いを、もう少し詳しく聴かせていただけますか？"
             
             if isinstance(結果, dict):
                 数値データ = 結果.get("delta")
@@ -115,7 +118,8 @@ with 左カラム:
                     for key in st.session_state.scores:
                         変化分 = 数値データ.get(key, 0)
                         try:
-                            st.session_state.scores[key] = max(-10, min(10, st.session_state.scores[key] + float(変化分)))
+                            # 浮動小数点数として処理し、反映を確実にする
+                            st.session_state.scores[key] = max(-10.0, min(10.0, float(st.session_state.scores[key]) + float(変化分)))
                         except:
                             pass
                 
