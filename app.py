@@ -1,5 +1,5 @@
 import streamlit as st
-import pd as pd
+import pandas as pd
 import plotly.graph_objects as go
 from google import genai
 from google.genai import types
