@@ -41,18 +41,17 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラム分析を行ってください。"
+                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
 
-            # ユーザーの意図通り、1リクエスト内での2段階思考を促す
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
-            ステップ1：発言を多角的に分析し、複数の自我状態にポイントを配分する。
-            ステップ2：その数値に基づいた共感的な返答を作成する。
-            
-            必ず次のJSON形式のみで返せ。
+            指示：
+            1. 発言を多面的に分析し、複数の指標（CP, NP, A, FC, AC）にポイントを配分してください。
+            2. その分析に基づいた、ユーザーに深く寄り添う温かい返答を作成してください。
+            3. 必ず次のJSON形式を含めて出力してください。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -64,15 +63,25 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # JSON抽出
+        # --- 強化された抽出ロジック ---
+        # AIがJSONの外にお喋りを漏らしても、JSON部分だけを強引に抜き出す
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group(1))
+            try:
+                data = json.loads(json_match.group(1))
+                # JSONの中にreplyがない、または極端に短い場合は全文をreplyにする
+                if not data.get("reply") or len(str(data.get("reply"))) < 5:
+                    data["reply"] = raw_text
+                return data
+            except:
+                pass
         
+        # JSON抽出に完全に失敗しても、AIの生回答を「返答」として救済する
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。"}
+        # ネットワークエラー等の最終ガード
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "あなたの言葉を大切に受け止めています。そのお気持ち、もう少し詳しくお聴かせいただけますか？"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -110,13 +119,15 @@ with 左カラム:
             with st.spinner("深層心理を分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
+            # 安全なデータ加算処理
             delta = 結果.get("delta", {})
             for key in st.session_state.scores:
                 val = delta.get(key, 0)
                 try:
                     current_val = st.session_state.scores[key]
+                    # deltaが文字列で返ってきても浮動小数点に変換して加算
                     st.session_state.scores[key] = float(max(-10.0, min(10.0, current_val + float(val))))
-                except:
+                except (ValueError, TypeError):
                     pass
             
             返答 = 結果.get("reply", "お話しいただきありがとうございます。")
