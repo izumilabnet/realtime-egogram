@@ -48,7 +48,7 @@ def get_analysis(text, scores, is_final=False):
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
-            必ず次のJSON形式のみで返せ。解説は不要。
+            必ず次のJSON形式のみで返せ。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -60,7 +60,7 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # JSON抽出のロジックを強化
+        # JSON抽出のロジック
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group(1))
