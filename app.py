@@ -43,7 +43,7 @@ def get_analysis(text, scores, is_final=False):
             except:
                 base_rules = "エゴグラム分析を行ってください。"
 
-            # f-string内のJSON構文を二重波括弧で保護
+            # f-string内でのみ二重波括弧を使用し、JSON構造を記述
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
@@ -72,8 +72,8 @@ def get_analysis(text, scores, is_final=False):
         
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
-    except Exception as e:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": f"接続を確認しています。お話を続けてください。"}
+    except Exception:
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "接続を確認しています。お話を続けてください。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -86,8 +86,9 @@ with 右カラム:
         y=df['値'], 
         marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
     ))
+    # Streamlitの警告に従い width="stretch" に変更
     fig.update_layout(yaxis=dict(range=[-10.1, 10.1], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.progress(min(st.session_state.count / 10, 1.0))
     
     if st.session_state.diagnosis:
@@ -105,22 +106,24 @@ with 左カラム:
             st.write(msg["content"])
 
     if st.session_state.count < 10:
-        if user_input := st.chat_input("今の気持ちを教えてください"):
-            st.session_state.chat.append({"role": "user", "content": user_input})
+        if 入力文字 := st.chat_input("今の気持ちを教えてください"):
+            # ここを修正：辞書作成なので波括弧は1つ
+            st.session_state.chat.append({"role": "user", "content": 入力文字})
             
             with st.spinner("分析中..."):
-                res = get_analysis(user_input, st.session_state.scores)
+                結果 = get_analysis(入力文字, st.session_state.scores)
             
-            d = res.get("delta", {})
-            for k in st.session_state.scores:
-                v = d.get(k, 0)
+            delta = 結果.get("delta", {})
+            for key in st.session_state.scores:
+                val = delta.get(key, 0)
                 try:
-                    curr = st.session_state.scores[k]
-                    st.session_state.scores[k] = float(max(-10.0, min(10.0, curr + float(v))))
+                    curr = st.session_state.scores[key]
+                    st.session_state.scores[key] = float(max(-10.0, min(10.0, curr + float(val))))
                 except: pass
             
-            reply = res.get("reply", "お話を聴かせてください。")
-            st.session_state.chat.append({"role": "assistant", "content": reply})
+            返答 = 結果.get("reply", "お話を聴かせてください。")
+            # ここも修正：波括弧は1つ
+            st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
             
             if st.session_state.count >= 10:
