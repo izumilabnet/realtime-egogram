@@ -35,7 +35,7 @@ def get_analysis(text, scores, is_final=False):
         model_id = "gemini-2.5-flash"
         
         if is_final:
-            prompt_content = f"最終スコア {scores} から、性格類型、特徴、適職、アドバイスを詳細な日本語のJSONで返してください。"
+            prompt_content = f"最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、アドバイスを詳細な日本語のJSONで返してください。"
         else:
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
@@ -43,12 +43,18 @@ def get_analysis(text, scores, is_final=False):
             except:
                 base_rules = "生命力の指向性に基づいて分析してください。"
 
+            # 1リクエスト内で2段階処理を促すプロンプト
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
-            今回の発言: '{text}'
+            ユーザーの発言: '{text}'
             
-            必ず次のJSON形式のみで返せ。
+            あなたは以下の2ステップで思考し、最終結果のみをJSONで出力してください。
+            
+            ステップ1：発言からエネルギーの動きを読み取り、CP, NP, A, FC, ACの増減値（-3〜3）を決定する。
+            ステップ2：決定した数値と文脈に基づき、ユーザーの心に寄り添う返答（100文字程度）を作成する。
+            
+            出力形式（JSONのみ）:
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -59,18 +65,17 @@ def get_analysis(text, scores, is_final=False):
         )
         
         raw_text = response.text.strip()
-        print(f"--- Raw Response ---\n{raw_text}\n--------------------")
-
-        # JSON抽出の試行
-        json_match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
         
-        # 解析不能な場合はテキストだけでも救う
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text[:200]}
+        # JSON抽出
+        json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1))
+        
+        # フォールバック
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
+
     except Exception as e:
-        print(f"Error: {e}")
-        return None
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。続けてお聴かせください。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -108,15 +113,17 @@ with 左カラム:
             with st.spinner("深層心理を分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
-            if 結果 and isinstance(結果, dict):
-                delta = 結果.get("delta", {})
-                for key in st.session_state.scores:
-                    val = delta.get(key, 0)
-                    st.session_state.scores[key] = float(max(-10.0, min(10.0, st.session_state.scores[key] + float(val))))
-                返答 = 結果.get("reply", "お話しいただきありがとうございます。")
-            else:
-                返答 = "少し接続が不安定なようです。もう一度お話しいただけますか？"
-
+            # 安全なデータ抽出
+            delta = 結果.get("delta", {})
+            for key in st.session_state.scores:
+                val = delta.get(key, 0)
+                try:
+                    current_val = st.session_state.scores[key]
+                    st.session_state.scores[key] = float(max(-10.0, min(10.0, current_val + float(val))))
+                except:
+                    pass
+            
+            返答 = 結果.get("reply", "お話しいただきありがとうございます。")
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
             
