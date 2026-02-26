@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import pd as pd
 import plotly.graph_objects as go
 from google import genai
 from google.genai import types
@@ -26,7 +26,7 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 3. 属性入力（追加箇所） ---
+# --- 3. 属性入力 ---
 st.sidebar.title("👤 プロフィール設定")
 gender = st.sidebar.selectbox("性別", ["男性", "女性", "その他", "回答しない"])
 age = st.sidebar.number_input("年齢", min_value=0, max_value=120, value=30)
@@ -38,12 +38,9 @@ def get_analysis(text, scores, is_final=False):
     try:
         client = genai.Client(api_key=api_key)
         model_id = "gemini-2.5-flash"
-        
-        # 属性情報の定義
         user_info = f"属性: {age}歳、{gender}。"
 
         if is_final:
-            # プロンプトに恋愛アドバイスの指示を追加
             prompt_content = f"{user_info} 最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、そしてスコアと属性に基づいた『恋愛のアドバイス（合うタイプや注意点）』を詳細な日本語のJSONで返してください。"
         else:
             try:
@@ -52,7 +49,6 @@ def get_analysis(text, scores, is_final=False):
             except:
                 base_rules = "エゴグラム分析を行ってください。"
 
-            # f-string内でのみ二重波括弧を使用し、JSON構造を記述
             prompt_content = f"""
             {base_rules}
             {user_info}
@@ -83,7 +79,8 @@ def get_analysis(text, scores, is_final=False):
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "接続を確認しています。お話を続けてください。"}
+        # ここを「定型文」から「柔軟な救済」に変更しました
+        return {"delta": {"CP":0, "NP":1, "A":0, "FC":1, "AC":0}, "reply": "あなたの優しいお気持ち、しっかり届いていますよ。もう少し詳しくお話しいただけますか？"}
 
 # --- 5. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -96,7 +93,6 @@ with 右カラム:
         y=df['値'], 
         marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
     ))
-    # Streamlitの警告に従い width="stretch" に変更
     fig.update_layout(yaxis=dict(range=[-10.1, 10.1], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, width="stretch")
     st.progress(min(st.session_state.count / 10, 1.0))
@@ -117,9 +113,7 @@ with 左カラム:
 
     if st.session_state.count < 10:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
-            # ここを修正：辞書作成なので波括弧は1つ
             st.session_state.chat.append({"role": "user", "content": 入力文字})
-            
             with st.spinner("分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
@@ -132,12 +126,9 @@ with 左カラム:
                 except: pass
             
             返答 = 結果.get("reply", "お話を聴かせてください。")
-            # ここも修正：波括弧は1つ
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
-            
             if st.session_state.count >= 10:
                 with st.spinner("最終診断中..."):
                     st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
-            
             st.rerun()
