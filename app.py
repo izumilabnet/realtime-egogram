@@ -41,7 +41,14 @@ def get_analysis(text, scores, is_final=False):
         user_info = f"属性: {age}歳、{gender}。"
 
         if is_final:
-            prompt_content = f"{user_info} 最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、そしてスコアと属性に基づいた『恋愛のアドバイス（合うタイプや注意点）』を詳細な日本語のJSONで返してください。"
+            # 診断結果の文字数を制限する指示を追加
+            prompt_content = f"""
+            {user_info} 最終的なエゴグラムスコア {scores} から、以下の内容を日本語のJSONで返してください。
+            1. 性格類型（短いキャッチコピー）
+            2. 特徴（200字程度で簡潔に）
+            3. 適職（100字以内で箇条書き）
+            4. 恋愛のアドバイス（100字以内で具体的なポイントを）
+            """
         else:
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
@@ -97,7 +104,7 @@ with 右カラム:
     st.progress(min(st.session_state.count / 10, 1.0))
     
     if st.session_state.diagnosis:
-        st.success("### 診断結果")
+        st.success("### 🎓 最終診断レポート")
         diag = st.session_state.diagnosis
         if isinstance(diag, dict):
             for k, v in diag.items():
