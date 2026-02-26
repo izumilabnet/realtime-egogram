@@ -79,7 +79,6 @@ def get_analysis(text, scores, is_final=False):
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        # ここを「定型文」から「柔軟な救済」に変更しました
         return {"delta": {"CP":0, "NP":1, "A":0, "FC":1, "AC":0}, "reply": "あなたの優しいお気持ち、しっかり届いていますよ。もう少し詳しくお話しいただけますか？"}
 
 # --- 5. 画面レイアウト ---
