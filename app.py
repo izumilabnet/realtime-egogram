@@ -32,7 +32,6 @@ def get_analysis(text, scores, is_final=False):
     if not api_key: return None
     try:
         client = genai.Client(api_key=api_key)
-        # モデル名を gemini-2.5-flash に固定
         model_id = "gemini-2.5-flash"
         
         if is_final:
@@ -42,17 +41,18 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
+                base_rules = "エゴグラム分析を行ってください。"
 
+            # f-string内のJSON構文を二重波括弧で保護
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
             指示：
-            1. 分析フェーズ：発言から複数の指標（CP, NP, A, FC, AC）の増減（-3〜3）を決定。
-            2. 応答フェーズ：分析に基づき、ユーザーの今の心境に深く寄り添う返答を作成。
-            3. 最終出力：以下のJSON形式を厳守し、他のテキストは出力しないでください。
+            1. 分析フェーズ：発言から指標（CP, NP, A, FC, AC）の増減（-3〜3）を決定。
+            2. 応答フェーズ：分析に基づき、ユーザーに寄り添う返答を作成。
+            3. 出力：以下のJSON形式のみを出力してください。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -63,22 +63,17 @@ def get_analysis(text, scores, is_final=False):
         )
         
         raw_text = response.text.strip()
-        
-        # 強力な抽出ロジック：JSON部分を強制的に抜き出す
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             try:
-                data = json.loads(json_match.group(1))
-                if "reply" in data and len(str(data["reply"])) > 2:
-                    return data
+                return json.loads(json_match.group(1))
             except:
                 pass
         
-        # パース失敗時は生テキストを救済
-        return {{"delta": {{"CP":0, "NP":0, "A":0, "FC":0, "AC":0}}, "reply": raw_text}}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
-    except Exception:
-        return {{"delta": {{"CP":0, "NP":0, "A":0, "FC":0, "AC":0}}, "reply": "お話を聴かせてください。"}}
+    except Exception as e:
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": f"接続を確認しています。お話を続けてください。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -105,28 +100,27 @@ with 右カラム:
             st.write(diag)
 
 with 左カラム:
-    for メッセージ in st.session_state.chat:
-        with st.chat_message(メッセージ["role"]):
-            st.write(メッセージ["content"])
+    for msg in st.session_state.chat:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
 
     if st.session_state.count < 10:
-        if 入力文字 := st.chat_input("今の気持ちを教えてください"):
-            st.session_state.chat.append({{"role": "user", "content": 入力文字}})
+        if user_input := st.chat_input("今の気持ちを教えてください"):
+            st.session_state.chat.append({"role": "user", "content": user_input})
             
-            with st.spinner("深層心理を分析中..."):
-                結果 = get_analysis(入力文字, st.session_state.scores)
+            with st.spinner("分析中..."):
+                res = get_analysis(user_input, st.session_state.scores)
             
-            delta = 結果.get("delta", {{}})
-            for key in st.session_state.scores:
-                val = delta.get(key, 0)
+            d = res.get("delta", {})
+            for k in st.session_state.scores:
+                v = d.get(k, 0)
                 try:
-                    current_val = st.session_state.scores[key]
-                    st.session_state.scores[key] = float(max(-10.0, min(10.0, current_val + float(val))))
-                except:
-                    pass
+                    curr = st.session_state.scores[k]
+                    st.session_state.scores[k] = float(max(-10.0, min(10.0, curr + float(v))))
+                except: pass
             
-            返答 = 結果.get("reply", "お話を聴かせてください。")
-            st.session_state.chat.append({{"role": "assistant", "content": 返答}})
+            reply = res.get("reply", "お話を聴かせてください。")
+            st.session_state.chat.append({"role": "assistant", "content": reply})
             st.session_state.count += 1
             
             if st.session_state.count >= 10:
