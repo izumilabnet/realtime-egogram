@@ -20,12 +20,13 @@ if 'diagnosis' not in st.session_state: st.session_state.diagnosis = None
 if not st.session_state.auth:
     st.title("リアルタイム・エゴグラム")
     pw = st.text_input("パスワードを入力してください", type="password")
-    if pw == "okok":
-        st.session_state.auth = True
-        st.rerun()
+    if st.button("ログイン"):
+        if pw == "okok":
+            st.session_state.auth = True
+            st.rerun()
     st.stop()
 
-# --- 3. 属性入力（サイドバー） ---
+# --- 3. 属性入力（追加箇所） ---
 st.sidebar.title("👤 プロフィール設定")
 gender = st.sidebar.selectbox("性別", ["男性", "女性", "その他", "回答しない"])
 age = st.sidebar.number_input("年齢", min_value=0, max_value=120, value=30)
@@ -33,25 +34,25 @@ age = st.sidebar.number_input("年齢", min_value=0, max_value=120, value=30)
 # --- 4. 分析エンジン ---
 def get_analysis(text, scores, is_final=False):
     api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key: return {"delta": {}, "reply": "APIキーが設定されていません。"}
-    
+    if not api_key: return None
     try:
         client = genai.Client(api_key=api_key)
         model_id = "gemini-2.5-flash"
+        
+        # 属性情報の定義
         user_info = f"属性: {age}歳、{gender}。"
 
         if is_final:
-            prompt_content = f"""
-            {user_info}
-            累積スコア {scores} に基づき、性格類型、強み・弱み、適職、そして現在のスコア傾向から見た「恋愛アドバイス（パートナー選びや注意点）」を日本語のJSONで返してください。
-            """
+            # プロンプトに恋愛アドバイスの指示を追加
+            prompt_content = f"{user_info} 最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、そしてスコアと属性に基づいた『恋愛のアドバイス（合うタイプや注意点）』を詳細な日本語のJSONで返してください。"
         else:
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "ユーザーの発言をエゴグラムに基づき分析してください。"
+                base_rules = "エゴグラム分析を行ってください。"
 
+            # f-string内でのみ二重波括弧を使用し、JSON構造を記述
             prompt_content = f"""
             {base_rules}
             {user_info}
@@ -59,9 +60,9 @@ def get_analysis(text, scores, is_final=False):
             ユーザーの発言: '{text}'
             
             指示：
-            1. 分析：発言からCP, NP, A, FC, ACの増減（-3〜3）を決定。
-            2. 応答：ユーザーの心境（例：へとへと、疲れた）に寄り添い、属性を考慮した返答を作成。
-            3. 出力：以下のJSON形式のみを出力。
+            1. 分析フェーズ：発言から指標（CP, NP, A, FC, AC）の増減（-3〜3）を決定。
+            2. 応答フェーズ：分析に基づき、ユーザーに寄り添う返答を作成。
+            3. 出力：以下のJSON形式のみを出力してください。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -74,13 +75,15 @@ def get_analysis(text, scores, is_final=False):
         raw_text = response.text.strip()
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group(1))
+            try:
+                return json.loads(json_match.group(1))
+            except:
+                pass
         
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
-    except Exception as e:
-        # 定型文ではなく、エラー内容をあえて表示してデバッグしやすくします
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": f"申し訳ありません、分析中にエラーが発生しました: {str(e)}"}
+    except Exception:
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "接続を確認しています。お話を続けてください。"}
 
 # --- 5. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -93,19 +96,19 @@ with 右カラム:
         y=df['値'], 
         marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
     ))
+    # Streamlitの警告に従い width="stretch" に変更
     fig.update_layout(yaxis=dict(range=[-10.1, 10.1], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, width="stretch")
     st.progress(min(st.session_state.count / 10, 1.0))
     
     if st.session_state.diagnosis:
-        st.success("### 🎓 性格・恋愛カルテ")
+        st.success("### 診断結果")
         diag = st.session_state.diagnosis
         if isinstance(diag, dict):
             for k, v in diag.items():
-                if k != "delta":
-                    st.markdown(f"**【{k}】**")
-                    st.write(v)
-                    st.divider()
+                if k != "delta": st.write(f"**{k}**: {v}")
+        else:
+            st.write(diag)
 
 with 左カラム:
     for msg in st.session_state.chat:
@@ -114,8 +117,10 @@ with 左カラム:
 
     if st.session_state.count < 10:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
+            # ここを修正：辞書作成なので波括弧は1つ
             st.session_state.chat.append({"role": "user", "content": 入力文字})
-            with st.spinner("深層心理を分析中..."):
+            
+            with st.spinner("分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
             delta = 結果.get("delta", {})
@@ -126,10 +131,13 @@ with 左カラム:
                     st.session_state.scores[key] = float(max(-10.0, min(10.0, curr + float(val))))
                 except: pass
             
-            返答 = 結果.get("reply", "...")
+            返答 = 結果.get("reply", "お話を聴かせてください。")
+            # ここも修正：波括弧は1つ
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
+            
             if st.session_state.count >= 10:
-                with st.spinner("最終カルテを生成中..."):
+                with st.spinner("最終診断中..."):
                     st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
+            
             st.rerun()
