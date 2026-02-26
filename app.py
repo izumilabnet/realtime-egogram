@@ -26,7 +26,12 @@ if not st.session_state.auth:
             st.rerun()
     st.stop()
 
-# --- 3. 分析エンジン ---
+# --- 3. 属性入力（サイドバー） ---
+st.sidebar.title("👤 プロフィール設定")
+gender = st.sidebar.selectbox("性別", ["回答しない", "男性", "女性", "その他"])
+age = st.sidebar.number_input("年齢", min_value=0, max_value=120, value=30)
+
+# --- 4. 分析エンジン ---
 def get_analysis(text, scores, is_final=False):
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key: return None
@@ -34,8 +39,19 @@ def get_analysis(text, scores, is_final=False):
         client = genai.Client(api_key=api_key)
         model_id = "gemini-2.5-flash"
         
+        # 属性情報の文字列化
+        user_info = f"属性: {age}歳、{gender}。"
+
         if is_final:
-            prompt_content = f"最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、アドバイスを詳細な日本語のJSONで返してください。"
+            prompt_content = f"""
+            {user_info}
+            累積エゴグラムスコア {scores} に基づき、最終診断を行ってください。
+            以下の項目を必ず含む、具体的で温かい日本語のJSONで返してください。
+            1. 性格類型（キャッチコピー）
+            2. 性格の特徴と強み・弱み
+            3. 適職アドバイス
+            4. 恋愛のアドバイス（現在のスコア傾向から、どのようなパートナーと合うか、注意点は何か）
+            """
         else:
             try:
                 with open("prompt.txt", "r", encoding="utf-8") as f:
@@ -43,16 +59,16 @@ def get_analysis(text, scores, is_final=False):
             except:
                 base_rules = "エゴグラム分析を行ってください。"
 
-            # f-string内でのみ二重波括弧を使用し、JSON構造を記述
             prompt_content = f"""
             {base_rules}
+            {user_info}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
             指示：
-            1. 分析フェーズ：発言から指標（CP, NP, A, FC, AC）の増減（-3〜3）を決定。
-            2. 応答フェーズ：分析に基づき、ユーザーに寄り添う返答を作成。
-            3. 出力：以下のJSON形式のみを出力してください。
+            1. 分析：発言から指標（CP, NP, A, FC, AC）の増減（-3〜3）を決定。属性も考慮すること。
+            2. 応答：分析に基づき、寄り添う返答を作成。
+            3. 出力：以下のJSON形式を厳守。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -73,9 +89,9 @@ def get_analysis(text, scores, is_final=False):
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "接続を確認しています。お話を続けてください。"}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話を続けてください。"}
 
-# --- 4. 画面レイアウト ---
+# --- 5. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
 
 with 右カラム:
@@ -86,17 +102,19 @@ with 右カラム:
         y=df['値'], 
         marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
     ))
-    # Streamlitの警告に従い width="stretch" に変更
     fig.update_layout(yaxis=dict(range=[-10.1, 10.1], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig, width="stretch")
     st.progress(min(st.session_state.count / 10, 1.0))
     
     if st.session_state.diagnosis:
-        st.success("### 診断結果")
+        st.success("### 🎓 最終診断レポート")
         diag = st.session_state.diagnosis
         if isinstance(diag, dict):
             for k, v in diag.items():
-                if k != "delta": st.write(f"**{k}**: {v}")
+                if k != "delta":
+                    st.markdown(f"**【{k}】**")
+                    st.write(v)
+                    st.divider()
         else:
             st.write(diag)
 
@@ -107,10 +125,8 @@ with 左カラム:
 
     if st.session_state.count < 10:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
-            # ここを修正：辞書作成なので波括弧は1つ
             st.session_state.chat.append({"role": "user", "content": 入力文字})
-            
-            with st.spinner("分析中..."):
+            with st.spinner("深層心理を分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
             delta = 結果.get("delta", {})
@@ -122,12 +138,10 @@ with 左カラム:
                 except: pass
             
             返答 = 結果.get("reply", "お話を聴かせてください。")
-            # ここも修正：波括弧は1つ
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
             
             if st.session_state.count >= 10:
-                with st.spinner("最終診断中..."):
+                with st.spinner("最終結果を生成中..."):
                     st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
-            
             st.rerun()
