@@ -49,10 +49,10 @@ def get_analysis(text, scores, is_final=False):
             ユーザーの発言: '{text}'
             
             思考プロセス：
-            1. 分析：一つの発言を多角的に捉え、複数の指標（CP, NP, A, FC, AC）にポイントを配分。抑制や否定があれば減点（-3〜3）も行う。
+            1. 分析：一つの発言を多角的に捉え、複数の指標（CP, NP, A, FC, AC）にポイントを配分。
             2. 応答：分析に基づいた温かい返答を作成。
             
-            必ず次のJSON形式を含めて出力してください。
+            必ず次のJSON形式のみで返せ。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -64,21 +64,22 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # JSON抽出ロジック
+        # --- 超強化パースロジック ---
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                if not data.get("reply") or len(str(data.get("reply"))) < 10:
-                    data["reply"] = raw_text.replace(json_match.group(0), "").strip() or raw_text
-                return data
+                # replyが適切に含まれているかチェック
+                if "reply" in data and len(str(data["reply"])) >= 5:
+                    return data
             except:
                 pass
         
+        # JSON抽出に失敗してもAIの生成した生テキストを返答として採用
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。"}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。そのお気持ち、よく分かりますよ。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
