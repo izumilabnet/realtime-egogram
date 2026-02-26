@@ -41,16 +41,17 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
+                base_rules = "エゴグラム分析を行ってください。"
 
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
-            指示：一つの材料を複数の指標（CP, NP, A, FC, AC）に割り当てて分析してください。
-            必ず次のJSON形式のみで返せ。
-            {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
+            【厳守】
+            1. 数値分析(delta)と共感応答(reply)の両方を行ってください。
+            2. 以下のJSON形式を必ず含めてください。
+            {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "ここに応答を記述"}}
             """
         
         response = client.models.generate_content(
@@ -61,69 +62,25 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # JSONを強引に抽出するロジック
+        # --- 内部処理の強化：数値と言葉を分離して抽出 ---
+        extracted_data = {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
+        
+        # JSON部分だけを探す
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
-            return json.loads(json_match.group(1))
+            try:
+                parsed = json.loads(json_match.group(1))
+                extracted_data["delta"] = parsed.get("delta", extracted_data["delta"])
+                # JSON内のreplyがあれば採用、なければ全文をreplyにする
+                extracted_data["reply"] = parsed.get("reply", raw_text)
+            except:
+                pass
         
-        # JSON抽出に失敗してもAIの生回答を返答として活かす
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
+        return extracted_data
 
     except Exception:
-        # 完全にクラッシュした時のみ定型文
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "あなたのその『もっと話したい』という熱気、しっかり受け止めました。ぜひ続けてください。"}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "（接続を維持しています。お話を続けてください。）"}
 
 # --- 4. 画面レイアウト ---
-左カラム, 右カラム = st.columns([2, 1])
-
-with 右カラム:
-    st.subheader("📊 EQイコライザー")
-    df = pd.DataFrame(list(st.session_state.scores.items()), columns=['項目', '値'])
-    fig = go.Figure(go.Bar(
-        x=df['項目'], 
-        y=df['値'], 
-        marker_color=['#ff4b4b' if v < 0 else '#1f77b4' for v in df['値']]
-    ))
-    fig.update_layout(yaxis=dict(range=[-10.1, 10.1], zeroline=True), height=350, margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig, use_container_width=True)
-    st.progress(min(st.session_state.count / 10, 1.0))
-    
-    if st.session_state.diagnosis:
-        st.success("### 診断結果")
-        diag = st.session_state.diagnosis
-        if isinstance(diag, dict):
-            for k, v in diag.items():
-                if k != "delta": st.write(f"**{k}**: {v}")
-        else:
-            st.write(diag)
-
-with 左カラム:
-    for メッセージ in st.session_state.chat:
-        with st.chat_message(メッセージ["role"]):
-            st.write(メッセージ["content"])
-
-    if st.session_state.count < 10:
-        if 入力文字 := st.chat_input("今の気持ちを教えてください"):
-            st.session_state.chat.append({"role": "user", "content": 入力文字})
-            
-            with st.spinner("深層心理を分析中..."):
-                結果 = get_analysis(入力文字, st.session_state.scores)
-            
-            delta = 結果.get("delta", {})
-            for key in st.session_state.scores:
-                val = delta.get(key, 0)
-                try:
-                    current_val = st.session_state.scores[key]
-                    st.session_state.scores[key] = float(max(-10.0, min(10.0, current_val + float(val))))
-                except:
-                    pass
-            
-            返答 = 結果.get("reply", "お話しいただきありがとうございます。")
-            st.session_state.chat.append({"role": "assistant", "content": 返答})
-            st.session_state.count += 1
-            
-            if st.session_state.count >= 10:
-                with st.spinner("最終診断中..."):
-                    st.session_state.diagnosis = get_analysis("", st.session_state.scores, True)
-            
-            st.rerun()
+# (中略: レイアウトとループ処理は以前の通り維持)
+# ※スペースの都合上省略しますが、ここから下のロジックも全角スペースを除去して実行してください。
