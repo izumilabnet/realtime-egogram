@@ -41,13 +41,14 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラム分析を行ってください。"
+                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
 
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
+            指示：一つの材料を複数の指標（CP, NP, A, FC, AC）に割り当てて分析してください。
             必ず次のJSON形式のみで返せ。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
@@ -60,15 +61,17 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # JSON抽出のロジック
+        # JSONを強引に抽出するロジック
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             return json.loads(json_match.group(1))
         
+        # JSON抽出に失敗してもAIの生回答を返答として活かす
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。"}
+        # 完全にクラッシュした時のみ定型文
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "あなたのその『もっと話したい』という熱気、しっかり受け止めました。ぜひ続けてください。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
