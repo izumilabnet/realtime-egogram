@@ -32,7 +32,7 @@ def get_analysis(text, scores, is_final=False):
     if not api_key: return None
     try:
         client = genai.Client(api_key=api_key)
-        model_id = "gemini-2.5-flash"
+        model_id = "gemini-2.0-flash"
         
         if is_final:
             prompt_content = f"最終的なエゴグラムスコア {scores} から、性格類型、特徴、適職、アドバイスを詳細な日本語のJSONで返してください。"
@@ -41,18 +41,17 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラム分析を行ってください。"
+                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
 
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
-            思考プロセス：
-            1. 分析：一つの発言を多角的に捉え、複数の指標（CP, NP, A, FC, AC）にポイントを配分。
-            2. 応答：分析に基づいた温かい返答を作成。
-            
-            必ず次のJSON形式のみで返せ。
+            指示：
+            1. 発言を多面的に分析し、複数の指標（CP, NP, A, FC, AC）にポイント（-3〜3）を配分してください。
+            2. その分析に基づいた、ユーザーに深く寄り添う温かい返答を作成してください。
+            3. 必ず次のJSON形式を含めて出力してください。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -64,22 +63,21 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # --- 超強化パースロジック ---
+        # --- 強化された抽出ロジック ---
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                # replyが適切に含まれているかチェック
-                if "reply" in data and len(str(data["reply"])) >= 5:
+                if "reply" in data and len(str(data["reply"])) > 5:
                     return data
             except:
                 pass
         
-        # JSON抽出に失敗してもAIの生成した生テキストを返答として採用
+        # パース失敗時は生テキストを救済
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。そのお気持ち、よく分かりますよ。"}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "本当にお疲れ様です。慣れない仕事で心身ともに削られている中、よくここまで頑張られましたね。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -114,7 +112,7 @@ with 左カラム:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
             st.session_state.chat.append({"role": "user", "content": 入力文字})
             
-            with st.spinner("分析中..."):
+            with st.spinner("深層心理を分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
             delta = 結果.get("delta", {})
@@ -126,7 +124,7 @@ with 左カラム:
                 except:
                     pass
             
-            返答 = 結果.get("reply", "お話しいただきありがとうございます。")
+            返答 = 結果.get("reply", "お疲れ様です。お話を聴かせてください。")
             st.session_state.chat.append({"role": "assistant", "content": 返答})
             st.session_state.count += 1
             
