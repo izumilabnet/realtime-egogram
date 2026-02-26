@@ -41,17 +41,18 @@ def get_analysis(text, scores, is_final=False):
                 with open("prompt.txt", "r", encoding="utf-8") as f:
                     base_rules = f.read()
             except:
-                base_rules = "エゴグラムの5指標に基づいて多面的に分析してください。"
+                base_rules = "エゴグラム分析を行ってください。"
 
             prompt_content = f"""
             {base_rules}
             現在の累積スコア: {scores}
             ユーザーの発言: '{text}'
             
-            指示：
-            1. 発言を多面的に分析し、複数の指標（CP, NP, A, FC, AC）にポイントを配分してください。
-            2. その分析に基づいた、ユーザーに深く寄り添う温かい返答を作成してください。
-            3. 必ず次のJSON形式を含めて出力してください。
+            思考プロセス：
+            1. 分析：一つの発言を多角的に捉え、複数の指標（CP, NP, A, FC, AC）にポイントを配分。抑制や否定があれば減点（-3〜3）も行う。
+            2. 応答：分析に基づいた温かい返答を作成。
+            
+            必ず次のJSON形式を含めて出力してください。
             {{"delta": {{"CP": 0, "NP": 0, "A": 0, "FC": 0, "AC": 0}}, "reply": "返答内容"}}
             """
         
@@ -63,25 +64,21 @@ def get_analysis(text, scores, is_final=False):
         
         raw_text = response.text.strip()
         
-        # --- 強化された抽出ロジック ---
-        # AIがJSONの外にお喋りを漏らしても、JSON部分だけを強引に抜き出す
+        # JSON抽出ロジック
         json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
         if json_match:
             try:
                 data = json.loads(json_match.group(1))
-                # JSONの中にreplyがない、または極端に短い場合は全文をreplyにする
-                if not data.get("reply") or len(str(data.get("reply"))) < 5:
-                    data["reply"] = raw_text
+                if not data.get("reply") or len(str(data.get("reply"))) < 10:
+                    data["reply"] = raw_text.replace(json_match.group(0), "").strip() or raw_text
                 return data
             except:
                 pass
         
-        # JSON抽出に完全に失敗しても、AIの生回答を「返答」として救済する
         return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": raw_text}
 
     except Exception:
-        # ネットワークエラー等の最終ガード
-        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "あなたの言葉を大切に受け止めています。そのお気持ち、もう少し詳しくお聴かせいただけますか？"}
+        return {"delta": {"CP":0, "NP":0, "A":0, "FC":0, "AC":0}, "reply": "お話しいただきありがとうございます。"}
 
 # --- 4. 画面レイアウト ---
 左カラム, 右カラム = st.columns([2, 1])
@@ -116,18 +113,16 @@ with 左カラム:
         if 入力文字 := st.chat_input("今の気持ちを教えてください"):
             st.session_state.chat.append({"role": "user", "content": 入力文字})
             
-            with st.spinner("深層心理を分析中..."):
+            with st.spinner("分析中..."):
                 結果 = get_analysis(入力文字, st.session_state.scores)
             
-            # 安全なデータ加算処理
             delta = 結果.get("delta", {})
             for key in st.session_state.scores:
                 val = delta.get(key, 0)
                 try:
                     current_val = st.session_state.scores[key]
-                    # deltaが文字列で返ってきても浮動小数点に変換して加算
                     st.session_state.scores[key] = float(max(-10.0, min(10.0, current_val + float(val))))
-                except (ValueError, TypeError):
+                except:
                     pass
             
             返答 = 結果.get("reply", "お話しいただきありがとうございます。")
